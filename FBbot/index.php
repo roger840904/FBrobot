@@ -1,36 +1,211 @@
 <?php
-// parameters
-$hubVerifyToken = 'aaa';
-$accessToken = "EAAEg1pM65ZAwBALZCI2i3Nizd2tcYZCiZBM4iXkZCtrhfWFDiWnIQ48mkqSI2VahvxJOZAZBZCw2HAbNLGIPx5NvcFM3qw8kJkt1nMShiP6WHZAy8oup3SFXqZAxkmPKk02OB9ZB7kbqXBRgV9LKyEC5hokjrHU5Tt2T1qT9mCwizyNUwZDZD";
 
-// check token at setup
-if ($_REQUEST['hub_verify_token'] === $hubVerifyToken) {
-  echo $_REQUEST['hub_challenge'];
-  exit;
+$verify_token = "aaa"; // Verify token
+$token = "EAAEg1pM65ZAwBALvz6p8uZAQ7t0Ga1eSm15qw19roM0mNofdtdIZCgEcZAQl9WePNu8jfGvjKZAfCnpMshSwpcUpPrhr3ZBLhQsORHUHxneTau2YmQsDFqhO7x6WOCinWj10sfNMSGG6hcSIwJZBsmPj9xiVCmTAlwZB0xO9XnwgKAZDZD"; // Page token
+
+if (file_exists(__DIR__.'/config.php')) {
+    $config = include __DIR__.'/config.php';
+    $verify_token = $config['verify_token'];
+    $token = $config['token'];
 }
 
-// handle bot's anwser
-$input = json_decode(file_get_contents('php://input'), true);
+require_once(dirname(__FILE__) . '/vendor/autoload.php');
 
-$senderId = $input['entry'][0]['messaging'][0]['sender']['id'];
-$messageText = $input['entry'][0]['messaging'][0]['message']['text'];
+use pimax\FbBotApp;
+use pimax\Messages\Message;
+use pimax\Messages\ImageMessage;
+use pimax\UserProfile;
+use pimax\Messages\MessageButton;
+use pimax\Messages\StructuredMessage;
+use pimax\Messages\MessageElement;
+use pimax\Messages\MessageReceiptElement;
+use pimax\Messages\Address;
+use pimax\Messages\Summary;
+use pimax\Messages\Adjustment;
 
+// Make Bot Instance
+$bot = new FbBotApp($token);
 
-$answer = "I don't understand. Ask me 'hi'.";
-if($messageText == "hi") {
-    $answer = "Hello";
+if (!empty($_REQUEST['local'])) {
+
+    $message = new ImageMessage(1585388421775947, dirname(__FILE__).'/fb4d_logo-2x.png');
+
+    $message_data = $message->getData();
+    $message_data['message']['attachment']['payload']['url'] = 'fb4d_logo-2x.png';
+
+        echo '<pre>', print_r($message->getData()), '</pre>';
+
+    $res = $bot->send($message);
+
+    echo '<pre>', print_r($res), '</pre>';
 }
 
-$response = [
-    'recipient' => [ 'id' => $senderId ],
-    'message' => [ 'text' => $answer ]
-];
-$ch = curl_init('https://graph.facebook.com/v2.7/me/messages?access_token='.$accessToken);
-curl_setopt($ch, CURLOPT_POST, 1);
-curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($response));
-curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json']);
-curl_exec($ch);
-curl_close($ch);
+// Receive something
+if (!empty($_REQUEST['hub_mode']) && $_REQUEST['hub_mode'] == 'subscribe' && $_REQUEST['hub_verify_token'] == $verify_token) {
 
-//based on http://stackoverflow.com/questions/36803518
-?>
+    // Webhook setup request
+    echo $_REQUEST['hub_challenge'];
+} else {
+
+    // Other event
+
+    $data = json_decode(file_get_contents("php://input"), true, 512, JSON_BIGINT_AS_STRING);
+    if (!empty($data['entry'][0]['messaging'])) {
+        foreach ($data['entry'][0]['messaging'] as $message) {
+
+            // Skipping delivery messages
+            if (!empty($message['delivery'])) {
+                continue;
+            }
+
+            $command = "";
+
+            // When bot receive message from user
+            if (!empty($message['message'])) {
+                $command = $message['message']['text'];
+
+            // When bot receive button click from user
+            } else if (!empty($message['postback'])) {
+                $command = $message['postback']['payload'];
+            }
+
+            // Handle command
+            switch ($command) {
+
+                // When bot receive "text"
+                case 'text':
+                    $bot->send(new Message($message['sender']['id'], 'This is a simple text message.'));
+                    break;
+
+                // When bot receive "image"
+                case 'image':
+                    $bot->send(new ImageMessage($message['sender']['id'], 'https://developers.facebook.com/images/devsite/fb4d_logo-2x.png'));
+                    break;
+
+                // When bot receive "image"
+                case 'local image':
+                    $bot->send(new ImageMessage($message['sender']['id'], dirname(__FILE__).'/fb4d_logo-2x.png'));
+                    break;
+
+                // When bot receive "profile"
+                case 'profile':
+
+                    $user = $bot->userProfile($message['sender']['id']);
+                    $bot->send(new StructuredMessage($message['sender']['id'],
+                        StructuredMessage::TYPE_GENERIC,
+                        [
+                            'elements' => [
+                                new MessageElement($user->getFirstName()." ".$user->getLastName(), " ", $user->getPicture())
+                            ]
+                        ]
+                    ));
+
+                    break;
+
+                // When bot receive "button"
+                case 'button':
+                  $bot->send(new StructuredMessage($message['sender']['id'],
+                      StructuredMessage::TYPE_BUTTON,
+                      [
+                          'text' => 'Choose category',
+                          'buttons' => [
+                              new MessageButton(MessageButton::TYPE_POSTBACK, 'First button'),
+                              new MessageButton(MessageButton::TYPE_POSTBACK, 'Second button'),
+                              new MessageButton(MessageButton::TYPE_POSTBACK, 'Third button')
+                          ]
+                      ]
+                  ));
+                break;
+
+                // When bot receive "generic"
+                case 'generic':
+
+                    $bot->send(new StructuredMessage($message['sender']['id'],
+                        StructuredMessage::TYPE_GENERIC,
+                        [
+                            'elements' => [
+                                new MessageElement("First item", "Item description", "", [
+                                    new MessageButton(MessageButton::TYPE_POSTBACK, 'First button'),
+                                    new MessageButton(MessageButton::TYPE_WEB, 'Web link', 'http://facebook.com')
+                                ]),
+
+                                new MessageElement("Second item", "Item description", "", [
+                                    new MessageButton(MessageButton::TYPE_POSTBACK, 'First button'),
+                                    new MessageButton(MessageButton::TYPE_POSTBACK, 'Second button')
+                                ]),
+
+                                new MessageElement("Third item", "Item description", "", [
+                                    new MessageButton(MessageButton::TYPE_POSTBACK, 'First button'),
+                                    new MessageButton(MessageButton::TYPE_POSTBACK, 'Second button')
+                                ])
+                            ]
+                        ]
+                    ));
+                    
+                break;
+
+                // When bot receive "receipt"
+                case 'receipt':
+
+                    $bot->send(new StructuredMessage($message['sender']['id'],
+                        StructuredMessage::TYPE_RECEIPT,
+                        [
+                            'recipient_name' => 'Fox Brown',
+                            'order_number' => rand(10000, 99999),
+                            'currency' => 'USD',
+                            'payment_method' => 'VISA',
+                            'order_url' => 'http://facebook.com',
+                            'timestamp' => time(),
+                            'elements' => [
+                                new MessageReceiptElement("First item", "Item description", "", 1, 300, "USD"),
+                                new MessageReceiptElement("Second item", "Item description", "", 2, 200, "USD"),
+                                new MessageReceiptElement("Third item", "Item description", "", 3, 1800, "USD"),
+                            ],
+                            'address' => new Address([
+                                'country' => 'US',
+                                'state' => 'CA',
+                                'postal_code' => 94025,
+                                'city' => 'Menlo Park',
+                                'street_1' => '1 Hacker Way',
+                                'street_2' => ''
+                            ]),
+                            'summary' => new Summary([
+                                'subtotal' => 2300,
+                                'shipping_cost' => 150,
+                                'total_tax' => 50,
+                                'total_cost' => 2500,
+                            ]),
+                            'adjustments' => [
+                                new Adjustment([
+                                    'name' => 'New Customer Discount',
+                                    'amount' => 20
+                                ]),
+
+                                new Adjustment([
+                                    'name' => '$10 Off Coupon',
+                                    'amount' => 10
+                                ])
+                            ]
+                        ]
+                    ));
+
+                break;
+
+                case 'set menu':
+                    $bot->setPersistentMenu([
+                        new MessageButton(MessageButton::TYPE_WEB, "First link", "http://yandex.ru"),
+                        new MessageButton(MessageButton::TYPE_WEB, "Second link", "http://google.ru")
+                    ]);
+                break;
+
+                case 'delete menu':
+                    $bot->deletePersistentMenu();
+                break;
+
+                // Other message received
+                default:
+                    $bot->send(new Message($message['sender']['id'], 'Sorry. I don’t understand you.'));
+            }
+        }
+    }
+}
