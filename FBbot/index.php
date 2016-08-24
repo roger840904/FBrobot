@@ -1,36 +1,35 @@
 <?php
-$challenge = $_REQUEST['hub_challenge'];
-$verify_token = $_REQUEST['hub_verify_token'];
-// Set this Verify Token Value on your Facebook App 
-if ($verify_token === 'aaa') {
-  echo $challenge;
+// parameters
+$hubVerifyToken = 'aaa';
+$accessToken = "EAAEg1pM65ZAwBADWwkBn6pdxN0ScyPDLqKhRATdq0mftZAdxuZAqnYjhVO36J18ZAiIluaU9Bo383EnoX0lmlgD8UXPLWZAcG50QZB0JG3KdAw49WZAnZArUZAD0hVB4DZAvWeKhZCVS3eI9yEsddrARzPxzq3L1MNgrV67hfA06aYODwZDZD";
+
+// check token at setup
+if ($_REQUEST['hub_verify_token'] === $hubVerifyToken) {
+  echo $_REQUEST['hub_challenge'];
+  exit;
 }
+
+// handle bot's anwser
 $input = json_decode(file_get_contents('php://input'), true);
-// Get the Senders Graph ID
-$sender = $input['entry'][0]['messaging'][0]['sender']['id'];
-// Get the returned message
-$message = $input['entry'][0]['messaging'][0]['message']['text'];
-//API Url and Access Token, generate this token value on your Facebook App Page
-$url = 'https://graph.facebook.com/v2.7/me/messages?access_token=EAAEg1pM65ZAwBALvz6p8uZAQ7t0Ga1eSm15qw19roM0mNofdtdIZCgEcZAQl9WePNu8jfGvjKZAfCnpMshSwpcUpPrhr3ZBLhQsORHUHxneTau2YmQsDFqhO7x6WOCinWj10sfNMSGG6hcSIwJZBsmPj9xiVCmTAlwZB0xO9XnwgKAZDZD';
-//Initiate cURL.
-$ch = curl_init($url);
-//The JSON data.
-$jsonData = '{
-    "recipient":{
-        "id":"' . $sender . '"
-    }, 
-    "message":{
-        "text":"The message you want to return"
-    }
-}';
-//Tell cURL that we want to send a POST request.
-curl_setopt($ch, CURLOPT_POST, 1);
-//Attach our encoded JSON string to the POST fields.
-curl_setopt($ch, CURLOPT_POSTFIELDS, $jsonData);
-//Set the content type to application/json
-curl_setopt($ch, CURLOPT_HTTPHEADER, array('Content-Type: application/json'));
-//Execute the request but first check if the message is not empty.
-if(!empty($input['entry'][0]['messaging'][0]['message'])){
-  $result = curl_exec($ch);
+
+$senderId = $input['entry'][0]['messaging'][0]['sender']['id'];
+$messageText = $input['entry'][0]['messaging'][0]['message']['text'];
+
+
+$answer = "I don't understand. Ask me 'hi'.";
+if($messageText == "hi") {
+    $answer = "Hello";
 }
-?>
+
+$response = [
+    'recipient' => [ 'id' => $senderId ],
+    'message' => [ 'text' => $answer ]
+];
+$ch = curl_init('https://graph.facebook.com/v2.7/me/messages?access_token='.$accessToken);
+curl_setopt($ch, CURLOPT_POST, 1);
+curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($response));
+curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json']);
+curl_exec($ch);
+curl_close($ch);
+
+//based on http://stackoverflow.com/questions/36803518
